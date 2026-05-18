@@ -204,24 +204,35 @@ if result is not None and isinstance(result, dict):
         if raw:
             st.session_state.positions = raw
 
-# ── Table ─────────────────────────────────────────────────────────────────────
+# ── Live table (FIFO, ultimi 5) ───────────────────────────────────────────────
 st.divider()
-st.markdown("### 📋 Posizioni acquisite")
+
+n_total = len(st.session_state.positions)
+label = f"### 📋 Ultime posizioni acquisite"
+if n_total > 0:
+    label += f"  <span style='font-size:14px;color:{TEXT_MUTED};font-weight:400'>— totale: {n_total}</span>"
+st.markdown(label, unsafe_allow_html=True)
 
 if st.session_state.positions:
-    df = pd.DataFrame(st.session_state.positions)
-    df.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    # Mostra le ultime 5 righe, la più recente in cima (FIFO)
+    last5 = st.session_state.positions[-5:][::-1]
+    df_live = pd.DataFrame(last5)
+    df_live.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
+    # Formatta timestamp in ora locale leggibile
+    df_live["Timestamp"] = pd.to_datetime(df_live["Timestamp"]).dt.strftime("%H:%M:%S")
+    st.dataframe(df_live, use_container_width=True, hide_index=True)
 
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    # Download sempre disponibile (CSV completo, non solo le 5 righe)
+    df_full = pd.DataFrame(st.session_state.positions)
+    df_full.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
+    csv_bytes = df_full.to_csv(index=False).encode("utf-8")
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     st.download_button(
-        label="⬇️ Scarica CSV",
+        label="⬇️ Scarica CSV completo",
         data=csv_bytes,
         file_name=f"cs_mach1_gps_{now_str}.csv",
         mime="text/csv",
     )
-    st.markdown(f"**Totale punti:** `{len(st.session_state.positions)}`")
 else:
     st.markdown(
         "<div class='cs-info-card'>Nessuna posizione ancora acquisita.<br>"
