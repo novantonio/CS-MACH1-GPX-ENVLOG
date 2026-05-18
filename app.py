@@ -80,6 +80,30 @@ div[data-testid="stDownloadButton"] > button:hover {{
 </style>
 """, unsafe_allow_html=True)
 
+# ── Patch iframe per geolocation ─────────────────────────────────────────────
+# Streamlit monta i componenti HTML in iframe senza allow="geolocation".
+# Questo script sulla pagina principale osserva il DOM e aggiunge l'attributo
+# non appena l'iframe compare, prima che il browser blocchi la richiesta GPS.
+st.markdown("""
+<script>
+(function patchGeoIframes() {
+  function allow(iframe) {
+    if (!iframe.allow || !iframe.allow.includes('geolocation')) {
+      iframe.allow = (iframe.allow ? iframe.allow + '; ' : '') + 'geolocation';
+    }
+  }
+  document.querySelectorAll('iframe').forEach(allow);
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(m => m.addedNodes.forEach(node => {
+      if (node.tagName === 'IFRAME') allow(node);
+      if (node.querySelectorAll) node.querySelectorAll('iframe').forEach(allow);
+    }));
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # ── Header ────────────────────────────────────────────────────────────────────
 try:
     st.image("logo.png", width=220)
