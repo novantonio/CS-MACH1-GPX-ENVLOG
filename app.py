@@ -217,6 +217,7 @@ if result is not None and isinstance(result, dict):
         st.session_state.gps_enabled = True
     elif msg_type == "start":
         st.session_state.recording = True
+        st.session_state.stopped   = False
         st.session_state.positions = []
     elif msg_type == "position":
         entry = result.get("data", {})
@@ -224,54 +225,87 @@ if result is not None and isinstance(result, dict):
             st.session_state.positions.append(entry)
     elif msg_type == "stop":
         st.session_state.recording = False
+        st.session_state.stopped   = True
         raw = result.get("positions", [])
         if raw:
             st.session_state.positions = raw
 
-# ── Live table (FIFO, ultimi 5) ───────────────────────────────────────────────
+if "stopped" not in st.session_state:
+    st.session_state.stopped = False
+
+# ── Sezione dati ──────────────────────────────────────────────────────────────
 st.divider()
 
-n_total = len(st.session_state.positions)
-label = f"### 📋 Ultime posizioni acquisite"
-if n_total > 0:
-    label += f"  <span style='font-size:14px;color:{TEXT_MUTED};font-weight:400'>— totale: {n_total}</span>"
-st.markdown(label, unsafe_allow_html=True)
-
-if st.session_state.positions:
-    # Mostra le ultime 5 righe, la più recente in cima (FIFO)
-    last5 = st.session_state.positions[-5:][::-1]
-    df_live = pd.DataFrame(last5)
-    df_live.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
-    # Formatta timestamp in ora locale leggibile
-    df_live["Timestamp"] = pd.to_datetime(df_live["Timestamp"]).dt.strftime("%H:%M:%S")
-    st.dataframe(df_live, use_container_width=True, hide_index=True)
-
-    # Download sempre disponibile (CSV completo, non solo le 5 righe)
-    df_full = pd.DataFrame(st.session_state.positions)
-    df_full.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
-    csv_bytes = df_full.to_csv(index=False).encode("utf-8")
-    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    st.download_button(
-        label="⬇️ Scarica CSV completo",
-        data=csv_bytes,
-        file_name=f"cs_mach1_gps_{now_str}.csv",
-        mime="text/csv",
-    )
-else:
+if not st.session_state.positions:
+    # Nessun dato ancora
     st.markdown(
         "<div class='cs-info-card'>Nessuna posizione ancora acquisita.<br>"
         "Abilita il GPS, imposta l'intervallo e premi <strong>Avvia</strong>.</div>",
         unsafe_allow_html=True,
     )
 
-# ── Clear ─────────────────────────────────────────────────────────────────────
-if st.session_state.positions:
-    st.divider()
-    if st.button("🗑 Cancella sessione"):
-        st.session_state.positions = []
-        st.session_state.recording = False
-        st.session_state.gps_enabled = False
-        st.rerun()
+elif st.session_state.recording:
+    # ── Live FIFO durante la registrazione ──────────────────────────────────
+    n_total = len(st.session_state.positions)
+    st.markdown(
+        f"### 📡 Live  "
+        f"<span style='font-size:14px;color:{TEXT_MUTED};font-weight:400'>— {n_total} punti acquisiti</span>",
+        unsafe_allow_html=True,
+    )
+    last5 = st.session_state.positions[-5:][::-1]
+    df_live = pd.DataFrame(last5)
+    df_live.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
+    df_live["Timestamp"] = pd.to_datetime(df_live["Timestamp"]).dt.strftime("%H:%M:%S")
+    st.dataframe(df_live, use_container_width=True, hide_index=True)
+
+elif st.session_state.stopped:
+    # ── Riepilogo post-stop ──────────────────────────────────────────────────
+    n_total = len(st.session_state.positions)
+    preview_n = min(5, n_total)
+
+    st.markdown(
+        f"### ✅ Registrazione completata  "
+        f"<span style='font-size:14px;color:{TEXT_MUTED};font-weight:400'>— {n_total} punti totali</span>",
+        unsafe_allow_html=True,
+    )
+
+    # Ultime N posizioni in anteprima (più recente in cima)
+    preview = st.session_state.positions[-preview_n:][::-1]
+    df_preview = pd.DataFrame(preview)
+    df_preview.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
+    df_preview["Timestamp"] = pd.to_datetime(df_preview["Timestamp"]).dt.strftime("%H:%M:%S")
+    st.markdown(f"**Anteprima ultime {preview_n} posizioni:**")
+    st.dataframe(df_preview, use_container_width=True, hide_index=True)
+
+    # Callout download
+    st.markdown(
+        f"<div class='cs-info-card'>"
+        f"💾 <strong>Vuoi scaricare il tracciato completo?</strong><br>"
+        f"Il CSV contiene tutti i <strong>{n_total} punti</strong> acquisiti durante la sessione."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    col_dl, col_clear = st.columns([2, 1])
+    with col_dl:
+        df_full = pd.DataFrame(st.session_state.positions)
+        df_full.columns = ["Timestamp", "Latitudine", "Longitudine", "Accuratezza (m)"]
+        csv_bytes = df_full.to_csv(index=False).encode("utf-8")
+        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.download_button(
+            label="⬇️ Sì, scarica CSV completo",
+            data=csv_bytes,
+            file_name=f"cs_mach1_gps_{now_str}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with col_clear:
+        if st.button("🗑 Nuova sessione", use_container_width=True):
+            st.session_state.positions = []
+            st.session_state.recording = False
+            st.session_state.stopped   = False
+            st.session_state.gps_enabled = False
+            st.rerun()
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
